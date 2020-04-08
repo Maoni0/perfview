@@ -552,7 +552,7 @@ namespace Microsoft.Diagnostics.Tracing
             return true;
         }
 
-        internal override string ProcessName(int processID, long timeQPC)
+        public override string ProcessName(int processID, long timeQPC)
         {
             string result;
 

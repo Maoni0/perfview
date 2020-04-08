@@ -109,6 +109,7 @@ namespace Microsoft.Diagnostics.Tracing
                 startTime = options.StartTime == default(DateTime) ? DateTime.MinValue : options.StartTime;
                 endTime = options.EndTime == default(DateTime) ? DateTime.MaxValue : options.EndTime;
             }
+
             this.btlFilePath = btlFilePath;
             this.startFileOffset = 0;
             this.endQPCForManagedSymbolsInclusion = long.MaxValue;
@@ -155,7 +156,7 @@ namespace Microsoft.Diagnostics.Tracing
             return true;
         }
 
-        internal override string ProcessName(int processID, long time100ns)
+        public override string ProcessName(int processID, long time100ns)
         {
             if (!this.processNameForID.TryGetValue(processID, out var ret))
             {

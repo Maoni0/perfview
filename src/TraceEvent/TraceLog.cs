@@ -1148,7 +1148,7 @@ namespace Microsoft.Diagnostics.Tracing.Etlx
             kernelParser.ThreadStartGroup += delegate (ThreadTraceData data)
             {
                 TraceProcess process = processes.GetOrCreateProcess(data.ProcessID, data.TimeStampQPC);
-                thread = Threads.GetOrCreateThread(data.ThreadID, data.TimeStampQPC, process, data.Opcode == TraceEventOpcode.Start || data.Opcode == TraceEventOpcode.DataCollectionStart);
+                thread = Threads.GetOrCreateThread(data.ThreadID, data.TimeStampQPC, process, data.Opcode == TraceEventOpcode.Start);
                 thread.startTimeQPC = data.TimeStampQPC;
                 thread.userStackBase = data.UserStackBase;
                 if (data.Opcode == TraceEventOpcode.DataCollectionStart)
@@ -1682,7 +1682,7 @@ namespace Microsoft.Diagnostics.Tracing.Etlx
                     process.isServerGC = true;
                     foreach (var curThread in process.Threads)
                     {
-                        if (thread.threadInfo == null && process.markThreadsInGC.ContainsKey(curThread.ThreadID))
+                        if (curThread.threadInfo == null && process.markThreadsInGC.ContainsKey(curThread.ThreadID))
                         {
                             curThread.threadInfo = ".NET Server GC Thread(" + process.markThreadsInGC[curThread.ThreadID] + ")";
                         }
@@ -3027,7 +3027,7 @@ namespace Microsoft.Diagnostics.Tracing.Etlx
             return isBookkeepingEvent;
         }
 
-        internal override string ProcessName(int processID, long timeQPC)
+        public override string ProcessName(int processID, long timeQPC)
         {
             TraceProcess process = Processes.GetProcess(processID, timeQPC);
             if (process != null)
@@ -4325,7 +4325,7 @@ namespace Microsoft.Diagnostics.Tracing.Etlx
             base.Dispose(disposing);
         }
 
-        internal override string ProcessName(int processID, long timeQPC)
+        public override string ProcessName(int processID, long timeQPC)
         {
             return TraceLog.ProcessName(processID, timeQPC);
         }
@@ -5247,8 +5247,7 @@ namespace Microsoft.Diagnostics.Tracing.Etlx
         /// is guaranteed to be the correct process. Using timeQPC = TraceLog.sessionEndTimeQPC will return the
         /// last process with the given PID, even if it had died.
         /// </summary>
-
-        internal TraceProcess GetProcess(int processID, long timeQPC)
+        public TraceProcess GetProcess(int processID, long timeQPC)
         {
             int index;
             var ret = FindProcessAndIndex(processID, timeQPC, out index);

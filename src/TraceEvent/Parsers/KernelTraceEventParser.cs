@@ -11,6 +11,8 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Utilities;
 using Address = System.UInt64;
+using ProcessID = System.Int32;
+using ThreadID = System.Int32;
 
 /* This file was generated with the command */
 // traceParserGen /needsState /merge /renameFile KernelTraceEventParser.renames /mof KernelTraceEventParser.mof KernelTraceEventParser.cs
@@ -24,6 +26,50 @@ using Address = System.UInt64;
 // TODO I have low confidence in the TCP headers, especially for Versions < 2 (how much do we care?)
 namespace Microsoft.Diagnostics.Tracing.Parsers
 {
+    public interface IThreadIDToProcessID
+    {
+        ProcessID? ThreadIDToProcessID(ThreadID threadID, long timeQPC);
+        IEnumerable<ThreadIDAndTime> ProcessIDToThreadIDsAndTimes(ProcessID processID);
+    }
+
+    public struct ThreadIDAndTime
+    {
+        public readonly ThreadID ThreadID;
+        public readonly long TimeQPC;
+
+        public ThreadIDAndTime(ThreadID threadID, long timeQPC)
+        {
+            ThreadID = threadID;
+            TimeQPC = timeQPC;
+        }
+    }
+
+    internal class ThreadIDToProcessIDImpl : IThreadIDToProcessID
+    {
+        private readonly KernelTraceEventParserState state;
+        public ThreadIDToProcessIDImpl(KernelTraceEventParserState state)
+        {
+            this.state = state;
+        }
+
+        public ProcessID? ThreadIDToProcessID(ThreadID threadID, long timeQPC)
+        {
+            ProcessID res = state.ThreadIDToProcessID(threadID, timeQPC);
+            return res == -1 ? (ProcessID?) null : res;
+        }
+
+        public IEnumerable<ThreadIDAndTime> ProcessIDToThreadIDsAndTimes(ProcessID processID)
+        {
+            foreach (HistoryDictionary<ProcessID>.HistoryValue entry in state.threadIDtoProcessID.Entries)
+            {
+                if (entry.Value == processID)
+                {
+                    yield return new ThreadIDAndTime((ThreadID)entry.Key, entry.StartTime);
+                }
+            }
+        }
+    }
+
     /// <summary>
     /// The KernelTraceEventParser is a class that knows how to decode the 'standard' kernel events.
     /// It exposes an event for each event of interest that users can subscribe to.
@@ -247,6 +293,12 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
         }
 
         public KernelTraceEventParser(TraceEventSource source) : this(source, DefaultOptionsForSource(source)) { }
+
+        public IReadOnlyHistoryDictionary<int> ThreadIDToProcessID =>
+            State.threadIDtoProcessID;
+
+        public IThreadIDToProcessID ThreadIDToProcessIDGetter =>
+            new ThreadIDToProcessIDImpl(State);
 
         public KernelTraceEventParser(TraceEventSource source, ParserTrackingOptions tracking)
             : base(source)
@@ -4450,6 +4502,12 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Kernel
         // public int PreviousCState { get { return GetByteAt(10); } }
         // public int SpareByte { get { return GetByteAt(11); } }
 
+        // TODO: native WaitReason is documented up to 20, but actual values of KWAIT_REASON can go up to 37 
+        //       it does not map directly to ThreadWaitReason
+        //       see https://github.com/dotnet/runtime/blob/e771456512f1c5a1a8e443c8ff6307a9a3425d62/src/libraries/System.Diagnostics.Process/src/System/Diagnostics/ProcessManager.Windows.cs#L519
+        //       casting to ThreadWaitReason is not correct here.
+        //       The parts that rely on the numeric value (like join analysis) are ok.
+        //       Other use of this may need revising. 
         public ThreadWaitReason OldThreadWaitReason { get { return (ThreadWaitReason)GetByteAt(0xc); } }
         public ThreadWaitMode OldThreadWaitMode { get { return (ThreadWaitMode)GetByteAt(0xd); } }
         public ThreadState OldThreadState { get { return (ThreadState)GetByteAt(0xe); } }
@@ -9117,7 +9175,7 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Kernel
         }
         protected internal override void Dispatch()
         {
-            //Debug.Assert(!(Version > 0 && EventDataLength < HostOffset(12, 1)));
+            Debug.Assert(!(Version > 0 && EventDataLength < HostOffset(12, 1)));
             Action(this);
         }
         public override StringBuilder ToXml(StringBuilder sb)
@@ -9842,8 +9900,7 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Kernel
         }
         protected internal override void Dispatch()
         {
-            Debug.Assert(!(Version == 2 && EventDataLength != HostOffset(16, 1)));
-            Debug.Assert(!(Version > 2 && EventDataLength < HostOffset(16, 1)));
+            Debug.Assert(!(Version >= 2 && EventDataLength < HostOffset(16, 1)));
             Action(this);
         }
         public override StringBuilder ToXml(StringBuilder sb)

@@ -1,17 +1,33 @@
 //     Copyright (c) Microsoft Corporation.  All rights reserved.
+using Microsoft.Diagnostics.Tracing.Parsers;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using Address = System.UInt64;
+using ThreadID = System.Int32;
 
 namespace Microsoft.Diagnostics.Tracing.Utilities
 {
+    [Obsolete("This is experimental, you should not use it yet for non-experimental purposes.")]
+    public interface IReadOnlyHistoryDictionary<T>
+    {
+        bool TryGetValue(Address id, long time, out T value);
+        IEnumerable<Address> Keys { get; }
+        int Count { get; }
+
+        [Obsolete]
+        IEnumerable<ThreadIDAndTime> KeysAndTimesFromValue(T value, IEqualityComparer<T> eq);
+    }
+
     // Utilities for TraceEventParsers
     /// <summary>
     /// A HistoryDictionary is designed to look up 'handles' (pointer sized quantities), that might get reused
     /// over time (eg Process IDs, thread IDs).  Thus it takes a handle AND A TIME, and finds the value
     /// associated with that handle at that time.   
     /// </summary>
-    internal class HistoryDictionary<T>
+    [Obsolete("This is experimental, you should not use it yet for non-experimental purposes.")]
+    public class HistoryDictionary<T> : IReadOnlyHistoryDictionary<T>
     {
         public HistoryDictionary(int initialSize)
         {
@@ -131,7 +147,7 @@ namespace Microsoft.Diagnostics.Tracing.Utilities
             get
             {
 #if DEBUG
-            int ctr = 0;
+                int ctr = 0;
 #endif
                 foreach (HistoryValue entry in entries.Values)
                 {
@@ -139,17 +155,34 @@ namespace Microsoft.Diagnostics.Tracing.Utilities
                     while (list != null)
                     {
 #if DEBUG
-                    ctr++;
+                        ctr++;
 #endif
                         yield return list;
                         list = list.next;
                     }
                 }
 #if DEBUG
-            Debug.Assert(ctr == count);
+                Debug.Assert(ctr == count);
 #endif
             }
         }
+        public IEnumerable<Address> Keys
+        {
+            get
+            {
+                foreach (HistoryValue e in Entries)
+                {
+                    yield return e.Key;
+                }
+            }
+        }
+
+        [Obsolete] // Experimental
+        public IEnumerable<ThreadIDAndTime> KeysAndTimesFromValue(T value, IEqualityComparer<T> eq) =>
+           (from entry in Entries
+            where eq.Equals(entry.Value, value)
+            select new ThreadIDAndTime((ThreadID) entry.Key, entry.StartTime)).Distinct();
+
         public int Count { get { return count; } }
         /// <summary>
         /// Remove all entries associated with a given key (over all time).  
