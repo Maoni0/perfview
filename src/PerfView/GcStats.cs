@@ -543,6 +543,7 @@ namespace Stats
                     writer.WriteLine(">");
 
                     var sb = new System.Text.StringBuilder();
+                    //for (var gens = Gens.Gen0; gens <= Gens.GenPinObj; gens++)
                     for (var gens = Gens.Gen0; gens <= Gens.GenLargeObj; gens++)
                     {
                         sb.Clear();

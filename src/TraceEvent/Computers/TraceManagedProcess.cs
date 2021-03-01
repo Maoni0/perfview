@@ -2048,6 +2048,7 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
 
             long SurvRate = 0;
 
+            //if (gen == Gens.GenPinObj)
             if (gen == Gens.GenLargeObj)
             {
                 if (Generation < 2)
@@ -4604,6 +4605,7 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
                     MemoryPressure = (data.HasMemoryPressure) ? data.MemoryPressure : -1,
                     HasMemoryPressure = data.HasMemoryPressure,
                     VersionRecognized = data.VersionRecognized,
+                    //GenData = new GCPerHeapHistoryGenData[(int)Gens.GenPinObj + 1],
                     GenData = new GCPerHeapHistoryGenData[(int)Gens.GenLargeObj + 1],
                     CondemnReasons0 = data.CondemnReasons0,
                     CondemnReasons1 = (data.HasCondemnReasons1) ? data.CondemnReasons1 : -1,
@@ -4615,6 +4617,7 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
                     Version = data.Version
                 };
 
+                //for (Gens GenIndex = Gens.Gen0; GenIndex <= Gens.GenPinObj; GenIndex++)
                 for (Gens GenIndex = Gens.Gen0; GenIndex <= Gens.GenLargeObj; GenIndex++)
                 {
                     hist.GenData[(int)GenIndex] = data.GenData(GenIndex);

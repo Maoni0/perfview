@@ -4941,8 +4941,8 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
         Gen1,
         Gen2,
         GenLargeObj,
-        Gen0After,
-        GenPinObj,
+        Gen0After = 4,
+        GenPinObj = 4,
     }
 
     /// <summary>

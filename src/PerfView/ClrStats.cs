@@ -40,6 +40,7 @@ namespace Stats
             }
 
             int count = sortedProcs.Count;
+            int numProcesses = 0;
 
             if (count > 1)
             {
@@ -70,10 +71,15 @@ namespace Stats
                     }
 
                     writer.WriteLine("<LI><A HREF=\"#Stats_{0}\">Process {0,5}: {1}</A></LI>", data.ProcessID, XmlUtilities.XmlEscape(id));
+                    numProcesses++;
+                    if (numProcesses >= 10)
+                        break;
                 }
                 writer.WriteLine("</UL>");
                 writer.WriteLine("<HR/><HR/><BR/><BR/>");
             }
+
+            numProcesses = 0;
             foreach (TraceProcess stats in sortedProcs)
             {
                 var mang = stats.LoadedDotNetRuntime();
@@ -85,6 +91,11 @@ namespace Stats
                 if (type == ReportType.GC)
                 {
                     Stats.GcStats.ToHtml(writer, stats, mang, fileName, doServerGCReport);
+                    numProcesses++;
+                    if (numProcesses >= 10)
+                    {
+                        break;
+                    }
                 }
 
                 if (type == ReportType.JIT && mang.JIT.Stats().Interesting)
