@@ -17,6 +17,7 @@ using Microsoft.Diagnostics.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 using Address = System.UInt64;
@@ -4604,6 +4605,33 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
                 return;
             }
 
+            if (data.ProcessName.Contains("fragment"))
+            {
+                if (logFile == null)
+                {
+                    logFile = new StreamWriter(new FileStream("perheap-hist.txt", FileMode.CreateNew),
+                                                Encoding.ASCII);
+                }
+                logFile.WriteLine("{0}:{1}, first alloc h#{2} b {3}:{4}, GC#{5}, size {6}",
+                    data.ProcessName, data.ProcessID,
+                    (int)data.PinnedAllocated, 
+                    (int)data.FreeListAllocated, (int)(data.FreeListAllocated >> 32),
+                    (int)data.FreeListRejected, (int)(data.FreeListRejected >> 32));
+                logFile.WriteLine("{0}:{1}, last alloc h#{2} b {3}:{4}, GC#{5}, size {6}",
+                    data.ProcessName, data.ProcessID,
+                    (int)data.PinnedAllocatedAdvance, 
+                    (int)data.EndOfSegAllocated, (int)(data.EndOfSegAllocated >> 32),
+                    (int)data.CondemnedAllocated, (int)(data.CondemnedAllocated >> 32));
+
+                int heap_triggerd_gc = (int)(data.PinnedAllocatedAdvance >> 32);
+                if (heap_triggerd_gc != -858993460)
+                {
+                    logFile.WriteLine("h#{0} triggered GC", heap_triggerd_gc);
+                }
+
+                logFile.Flush();
+            }
+
             TraceGC _event = GetLastGC(proc);
             if (_event != null)
             {
@@ -4684,6 +4712,7 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
         // This is the server GC threads. It's built up in the 2nd server GC we see. 
         internal Dictionary<int, int> serverGCThreads = new Dictionary<int, int>();
 
+        static StreamWriter logFile = null;
 
         internal int IsServerGCThread(int threadID)
         {
