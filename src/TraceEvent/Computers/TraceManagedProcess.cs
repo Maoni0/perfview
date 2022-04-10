@@ -16,6 +16,7 @@ using Microsoft.Diagnostics.Tracing.Stacks;
 using Microsoft.Diagnostics.Utilities;
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
@@ -869,6 +870,16 @@ namespace Microsoft.Diagnostics.Tracing.Analysis
                 {
                     var stats = currentManagedProcess(data);
                     GCStats.ProcessPerHeapHistory(stats, data);
+                };
+
+                source.Clr.GCFitBucketInfo += delegate (GCFitBucketInfoTraceData data)
+                {
+                    var stats = currentManagedProcess(data);
+                    if (stats.GC.m_stats.IsBGCThread(data.ThreadID))
+                    {
+                        TraceGC _gc = TraceGarbageCollector.GetCurrentGC(stats);
+                        _gc.ProcessBucketInfo(data);
+                    }
                 };
 
                 source.Clr.GCJoin += delegate (GCJoinTraceData data)
@@ -2388,6 +2399,17 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
         /// Per heap statistics
         /// </summary>
         public List<GCPerHeapHistory> PerHeapHistories = new List<GCPerHeapHistory>();
+
+        // For each heap, we could have events to indicate buckets of certain items.
+        // Different types of GCs use buckets to indicate different info -
+        //   For gen1 GCs, this is buckets for plugs and gen2 FL items.
+        //   For BGCs, this is gen2 to POH FL items.
+        // Since we only fire these events if there's anything in the buckets, it means
+        // the number of buckets in each event must be > 0.
+        // This is a list of heaps that fired these events which are organized into a list
+        // of bucket kinds, organized by the BGC thread IDs.
+        public Dictionary<int, List<GCBucketInfo>> PerHeapSizeBuckets = new Dictionary<int, List<GCBucketInfo>>();
+
         /// <summary>
         /// Sum of the pinned plug sizes
         /// </summary>
@@ -2905,6 +2927,36 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
             }
         }
 
+        [MethodImpl(MethodImplOptions.NoOptimization)]
+        internal void ProcessBucketInfo(GCFitBucketInfoTraceData data)
+        {
+            GCBucketKind gCBucketKind = (GCBucketKind )data.BucketKind;
+            int bucketCount = data.Count;
+            long totalSize = data.TotalSize;
+            GCBucket[] buckets = data.Buckets;
+
+            GCBucketInfo info = new GCBucketInfo()
+            {
+                Kind = gCBucketKind,
+                Count = bucketCount,
+                TotalSize = totalSize,
+                Buckets = buckets
+            };
+
+            List<GCBucketInfo> listBuckets;
+
+            if (PerHeapSizeBuckets.ContainsKey(data.ThreadID))
+            {
+                listBuckets = PerHeapSizeBuckets[data.ThreadID];
+            }
+            else
+            {
+                listBuckets = new List<GCBucketInfo>();
+                PerHeapSizeBuckets.Add(data.ThreadID, listBuckets);
+            }
+
+            listBuckets.Add(info);
+        }
 
         internal void AddServerGCThreadTime(int heapIndex, float cpuMSec)
         {
@@ -3521,6 +3573,23 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
         public bool HasExtraGen0Commit;
         public int Version;
         public GCPerHeapHistoryGenData[] GenData;
+    }
+
+    public enum GCBucketKind
+    {
+        Gen2FLInGen1GC = 0,
+        Gen1Plugs = 1,
+        Gen2FLInBGC = 2,
+        LohFLInBGC = 3,
+        PohFLInBGC = 4
+    }
+
+    public class GCBucketInfo
+    {
+        public GCBucketKind Kind;
+        public int Count;
+        public long TotalSize;
+        public GCBucket[] Buckets;
     }
 
     /// <summary>
@@ -4599,7 +4668,6 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
             }
         }
 
-
         internal Dictionary<int, int> ThreadId2Priority = new Dictionary<int, int>();
         internal Dictionary<int, int> ServerGcHeap2ThreadId = new Dictionary<int, int>();
 
@@ -4619,7 +4687,6 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
 
         // This records the amount of CPU time spent at the end of last GC.
         internal double ProcessCpuAtLastGC = 0;
-
 
         internal Dictionary<int, object> backgroundGCThreads = new Dictionary<int, object>();
         internal bool IsBGCThread(int threadID)

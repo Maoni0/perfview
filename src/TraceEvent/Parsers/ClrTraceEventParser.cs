@@ -6,6 +6,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Runtime.CompilerServices;
 using Address = System.UInt64;
 
 // This file was generated with the following command:
@@ -687,6 +688,19 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
             {
                 source.UnregisterEventTemplate(value, 205, ProviderGuid);
                 source.UnregisterEventTemplate(value, 205, GCTaskGuid);
+            }
+        }
+        public event Action<GCFitBucketInfoTraceData> GCFitBucketInfo
+        {
+            add
+            {
+                // action, eventid, taskid, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName
+                RegisterTemplate(new GCFitBucketInfoTraceData(value, 209, 1, "GC", GCTaskGuid, 205, "FitBucketInfo", ProviderGuid, ProviderName));
+            }
+            remove
+            {
+                source.UnregisterEventTemplate(value, 209, ProviderGuid);
+                source.UnregisterEventTemplate(value, 209, GCTaskGuid);
             }
         }
         public event Action<GCJoinTraceData> GCJoin
@@ -6723,6 +6737,137 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
         }
 
         private event Action<GCGlobalHeapHistoryTraceData> Action;
+        #endregion
+    }
+
+    public struct GCBucket
+    {
+        public int index;
+        public int count; // How many items in this bucket
+        public long size; // Total size of items in this bucket
+
+        public GCBucket(int index, int count, long size)
+        {
+            this.index = index;
+            this.count = count;
+            this.size = size;
+        }
+    }
+
+    public sealed class GCFitBucketInfoTraceData : TraceEvent
+    {
+        public int BucketKind { get { return GetInt16At(2); } }
+        public long TotalSize { get { return GetInt64At(4); } }
+        //public int Count { get { _count = GetInt16At(12); return _count; } }
+        public int Count { get { return GetInt16At(12); } }
+
+        public GCBucket[] Buckets
+        {
+            [MethodImpl(MethodImplOptions.NoOptimization)]
+            get
+            {
+                GCBucket[] _buckets = new GCBucket[Count];
+                // Count starts at offset 12 and is a UInt16, so we start at 14.
+                int offset = 14;
+                int bucketSize = sizeof(Int16) + sizeof(Int32) + HostSizePtr(1);
+                for (int i = 0; i < _buckets.Length; i++)
+                {
+                    int index = GetInt16At(offset);                    
+                    int count = GetInt32At(offset + sizeof(Int16));
+                    long size = GetIntPtrAt(offset + sizeof(Int16) + sizeof(Int32));
+                    _buckets[i] = new GCBucket(index, count, size);
+
+                    offset += bucketSize;
+                }
+                return _buckets;
+            }
+        }
+
+        #region Private
+        internal GCFitBucketInfoTraceData(Action<GCFitBucketInfoTraceData> action, int eventID, int task, string taskName, Guid taskGuid, int opcode, string opcodeName, Guid providerGuid, string providerName)
+            : base(eventID, task, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName)
+        {
+            Action = action;
+        }
+        protected internal override void Dispatch()
+        {
+            Action(this);
+        }
+        protected internal override Delegate Target
+        {
+            get { return Action; }
+            set { Action = (Action<GCFitBucketInfoTraceData>)value; }
+        }
+        protected internal override void Validate()
+        {
+            //Debug.Assert(!(Version == 0 && EventDataLength != 28));
+            //Debug.Assert(!(Version == 1 && EventDataLength != 30));
+            //Debug.Assert(!(Version == 2 && EventDataLength != 38));
+            //Debug.Assert(!(Version == 3 && EventDataLength != 46));
+            //Debug.Assert(!(Version > 3 && EventDataLength < 46));
+        }
+        public override StringBuilder ToXml(StringBuilder sb)
+        {
+            Prefix(sb);
+            XmlAttrib(sb, "BucketKind", BucketKind);
+            XmlAttrib(sb, "TotalSize", TotalSize);
+            //XmlAttrib(sb, "Count", Count);
+            //XmlAttrib(sb, "b0", ((_buckets.Length > 0) ? _buckets[0].count : 0));
+            //XmlAttrib(sb, "b1", ((_buckets.Length > 1) ? _buckets[1].count : 0));
+            //XmlAttrib(sb, "b2", ((_buckets.Length > 2) ? _buckets[2].count : 0));
+            //XmlAttrib(sb, "b3", ((_buckets.Length > 3) ? _buckets[3].count : 0));
+            sb.Append("/>");
+            return sb;
+        }
+
+        public override string[] PayloadNames
+        {
+            get
+            {
+                if (payloadNames == null)
+                {
+                    //payloadNames = new string[] { "BucketKind", "TotalSize", "Count", "0", "1", "2", "3"};
+                    payloadNames = new string[] { "BucketKind", "TotalSize", "Count" };
+                }
+
+                return payloadNames;
+            }
+        }
+
+        public override object PayloadValue(int index)
+        {
+            switch (index)
+            {
+                case 0:
+                    return BucketKind;
+
+                case 1:
+                    return TotalSize;
+
+                case 2:
+                    return Count;
+
+                //case 3:
+                //    return ((_buckets.Length > 0) ? _buckets[0].count : 0);
+
+                //case 4:
+                //    return ((_buckets.Length > 1) ? _buckets[1].count : 0);
+
+                //case 5:
+                //    return ((_buckets.Length > 2) ? _buckets[2].count : 0);
+
+                //case 6:
+                //    return ((_buckets.Length > 3) ? _buckets[3].count : 0);
+
+                default:
+                    Debug.Assert(false, "Bad field index");
+                    return null;
+            }
+        }
+
+        private event Action<GCFitBucketInfoTraceData> Action;
+        //private int _count;
+        //private GCBucket[] _buckets;
         #endregion
     }
 
