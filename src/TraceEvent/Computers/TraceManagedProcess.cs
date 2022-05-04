@@ -2931,6 +2931,7 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
         internal void ProcessBucketInfo(GCFitBucketInfoTraceData data)
         {
             GCBucketKind gCBucketKind = (GCBucketKind )data.BucketKind;
+            //GCBucketKind gCBucketKind = (GCBucketKind)0;
             int bucketCount = data.Count;
             long totalSize = data.TotalSize;
             GCBucket[] buckets = data.Buckets;

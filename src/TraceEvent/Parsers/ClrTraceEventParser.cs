@@ -6758,26 +6758,36 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
     {
         public int BucketKind { get { return GetInt16At(2); } }
         public long TotalSize { get { return GetInt64At(4); } }
-        //public int Count { get { _count = GetInt16At(12); return _count; } }
-        public int Count { get { return GetInt16At(12); } }
+        public int Count 
+        {
+            get 
+            { 
+                _count = GetInt16At(12); 
+                return _count; 
+            } 
+        }
+        //public int Count { get { return GetInt16At(12); } }
 
         public GCBucket[] Buckets
         {
             [MethodImpl(MethodImplOptions.NoOptimization)]
             get
             {
-                GCBucket[] _buckets = new GCBucket[Count];
-                // Count starts at offset 12 and is a UInt16, so we start at 14.
-                int offset = 14;
-                int bucketSize = sizeof(Int16) + sizeof(Int32) + HostSizePtr(1);
-                for (int i = 0; i < _buckets.Length; i++)
+                //if (_buckets == null)
                 {
-                    int index = GetInt16At(offset);                    
-                    int count = GetInt32At(offset + sizeof(Int16));
-                    long size = GetIntPtrAt(offset + sizeof(Int16) + sizeof(Int32));
-                    _buckets[i] = new GCBucket(index, count, size);
+                    _buckets = new GCBucket[Count];
+                    // Count starts at offset 12 and is a UInt16, so we start at 14.
+                    int offset = 14;
+                    int bucketSize = sizeof(Int16) + sizeof(Int32) + HostSizePtr(1);
+                    for (int i = 0; i < _buckets.Length; i++)
+                    {
+                        int index = GetInt16At(offset);
+                        int count = GetInt32At(offset + sizeof(Int16));
+                        long size = GetIntPtrAt(offset + sizeof(Int16) + sizeof(Int32));
+                        _buckets[i] = new GCBucket(index, count, size);
 
-                    offset += bucketSize;
+                        offset += bucketSize;
+                    }
                 }
                 return _buckets;
             }
@@ -6809,13 +6819,13 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
         public override StringBuilder ToXml(StringBuilder sb)
         {
             Prefix(sb);
-            XmlAttrib(sb, "BucketKind", BucketKind);
+            //XmlAttrib(sb, "BucketKind", BucketKind);
             XmlAttrib(sb, "TotalSize", TotalSize);
-            //XmlAttrib(sb, "Count", Count);
-            //XmlAttrib(sb, "b0", ((_buckets.Length > 0) ? _buckets[0].count : 0));
-            //XmlAttrib(sb, "b1", ((_buckets.Length > 1) ? _buckets[1].count : 0));
-            //XmlAttrib(sb, "b2", ((_buckets.Length > 2) ? _buckets[2].count : 0));
-            //XmlAttrib(sb, "b3", ((_buckets.Length > 3) ? _buckets[3].count : 0));
+            XmlAttrib(sb, "Count", Count);
+            XmlAttrib(sb, "b0", ((_buckets.Length > 0) ? _buckets[0].count : 0));
+            XmlAttrib(sb, "b1", ((_buckets.Length > 1) ? _buckets[1].count : 0));
+            XmlAttrib(sb, "b2", ((_buckets.Length > 2) ? _buckets[2].count : 0));
+            XmlAttrib(sb, "b3", ((_buckets.Length > 3) ? _buckets[3].count : 0));
             sb.Append("/>");
             return sb;
         }
@@ -6826,8 +6836,8 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
             {
                 if (payloadNames == null)
                 {
-                    //payloadNames = new string[] { "BucketKind", "TotalSize", "Count", "0", "1", "2", "3"};
-                    payloadNames = new string[] { "BucketKind", "TotalSize", "Count" };
+                    //payloadNames = new string[] { "BucketKind", "TotalSize", "Count", "b0", "b1", "b2", "b3"};
+                    payloadNames = new string[] { "BucketKind" };
                 }
 
                 return payloadNames;
@@ -6839,7 +6849,8 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
             switch (index)
             {
                 case 0:
-                    return BucketKind;
+                    //return BucketKind;
+                    return 0;
 
                 case 1:
                     return TotalSize;
@@ -6847,17 +6858,17 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
                 case 2:
                     return Count;
 
-                //case 3:
-                //    return ((_buckets.Length > 0) ? _buckets[0].count : 0);
+                case 3:
+                    return ((_buckets.Length > 0) ? _buckets[0].count : 0);
 
-                //case 4:
-                //    return ((_buckets.Length > 1) ? _buckets[1].count : 0);
+                case 4:
+                    return ((_buckets.Length > 1) ? _buckets[1].count : 0);
 
-                //case 5:
-                //    return ((_buckets.Length > 2) ? _buckets[2].count : 0);
+                case 5:
+                    return ((_buckets.Length > 2) ? _buckets[2].count : 0);
 
-                //case 6:
-                //    return ((_buckets.Length > 3) ? _buckets[3].count : 0);
+                case 6:
+                    return ((_buckets.Length > 3) ? _buckets[3].count : 0);
 
                 default:
                     Debug.Assert(false, "Bad field index");
@@ -6866,8 +6877,8 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
         }
 
         private event Action<GCFitBucketInfoTraceData> Action;
-        //private int _count;
-        //private GCBucket[] _buckets;
+        private int _count;
+        private GCBucket[] _buckets;
         #endregion
     }
 
