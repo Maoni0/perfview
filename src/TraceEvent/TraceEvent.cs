@@ -4119,6 +4119,7 @@ namespace Microsoft.Diagnostics.Tracing
                 if (payloadNames == null)
                 {
                     payloadNames = new string[0];
+                    //payloadNames = new string[2] { "EMPTY0", "EMPTY1" };
                 }
 
                 return payloadNames;

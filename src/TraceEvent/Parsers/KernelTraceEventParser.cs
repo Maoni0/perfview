@@ -2254,12 +2254,14 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
                 source.UnregisterEventTemplate(value, 129, MemoryTaskGuid);
             }
         }
-        public event Action<EmptyTraceData> MemoryRemoveFromWS
+        //public event Action<EmptyTraceData> MemoryRemoveFromWS
+        public event Action<MemoryPageRemoveTraceData> MemoryRemoveFromWS
         {
             add
             {
                 // action, eventid, taskid, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName
-                source.RegisterEventTemplate(new EmptyTraceData(value, 0xFFFF, 10, "Memory", MemoryTaskGuid, 131, "RemoveFromWS", ProviderGuid, ProviderName));
+                //source.RegisterEventTemplate(new EmptyTraceData(value, 0xFFFF, 10, "Memory", MemoryTaskGuid, 131, "RemoveFromWS", ProviderGuid, ProviderName));
+                source.RegisterEventTemplate(new MemoryPageRemoveTraceData(value, 0xFFFF, 10, "Memory", MemoryTaskGuid, 131, "RemoveFromWS", ProviderGuid, ProviderName, State));
             }
             remove
             {
@@ -3028,7 +3030,8 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
                 templates[139] = new EmptyTraceData(null, 0xFFFF, 10, "Memory", MemoryTaskGuid, 127, "VirtualRotate", ProviderGuid, ProviderName);
                 templates[140] = new EmptyTraceData(null, 0xFFFF, 10, "Memory", MemoryTaskGuid, 128, "VirtualAllocDCStart", ProviderGuid, ProviderName);
                 templates[141] = new EmptyTraceData(null, 0xFFFF, 10, "Memory", MemoryTaskGuid, 129, "VirtualAllocDCStop", ProviderGuid, ProviderName);
-                templates[142] = new EmptyTraceData(null, 0xFFFF, 10, "Memory", MemoryTaskGuid, 131, "RemoveFromWS", ProviderGuid, ProviderName);
+                //templates[142] = new EmptyTraceData(null, 0xFFFF, 10, "Memory", MemoryTaskGuid, 131, "RemoveFromWS", ProviderGuid, ProviderName);
+                templates[142] = new MemoryPageRemoveTraceData(null, 0xFFFF, 10, "Memory", MemoryTaskGuid, 131, "RemoveFromWS", ProviderGuid, ProviderName, null);
                 templates[143] = new EmptyTraceData(null, 0xFFFF, 10, "Memory", MemoryTaskGuid, 132, "WSSharableRundown", ProviderGuid, ProviderName);
                 templates[144] = new EmptyTraceData(null, 0xFFFF, 10, "Memory", MemoryTaskGuid, 133, "InMemoryActiveRundown", ProviderGuid, ProviderName);
                 templates[145] = new SampledProfileTraceData(null, 0xFFFF, 11, "PerfInfo", PerfInfoTaskGuid, 46, "Sample", ProviderGuid, ProviderName, null);
@@ -8486,11 +8489,15 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Kernel
         {
             get
             {
-                if (PageKind == Kernel.PageKind.File || PageKind == Kernel.PageKind.MetaFile)
+                if (PageKind == Kernel.PageKind.File || PageKind == Kernel.PageKind.MetaFile || PageKind == Kernel.PageKind.PageFileMapped)
                 {
                     return GetAddressAt(HostOffset(16, 2));
                 }
 
+                if (PageKind == Kernel.PageKind.ProcessPrivate)
+                {
+                    //Console.WriteLine("event data len is {0}, time {1}", EventDataLength, TimeStampRelativeMSec);
+                }
                 return GetAddressAt(HostOffset(12, 1)) & ~3UL;
             }
         }
@@ -8568,7 +8575,7 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Kernel
                 case 3:
                     return VirtualAddress;
                 case 4:
-                    return FileName;
+                    return (FileName + "LALA");
                 default:
                     Debug.Assert(false, "Bad field index");
                     return null;
@@ -8576,6 +8583,92 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Kernel
         }
 
         private event Action<MemoryPageAccessTraceData> Action;
+        protected internal override void SetState(object newState) { state = (KernelTraceEventParserState)newState; }
+        private KernelTraceEventParserState state;
+
+        /// <summary>
+        /// Indicate that the Address is a code address that needs symbolic information
+        /// </summary>
+        internal override bool LogCodeAddresses(Func<TraceEvent, Address, bool> callBack)
+        {
+            return callBack(this, VirtualAddress);
+        }
+        #endregion
+    }
+
+    public sealed class MemoryPageRemoveTraceData : TraceEvent
+    {
+        public Address VirtualAddress
+        {
+            get
+            {
+                return GetAddressAt(0) & ~3UL;
+            }
+        }
+
+        // TODO FIX NOW.  Probably not right since it is only valid for PageKind==File
+        public Address FileKey
+        {
+            get
+            {
+                return GetAddressAt(HostOffset(12, 1)) & ~3UL;
+            }
+        }
+
+        #region Private
+        internal MemoryPageRemoveTraceData(Action<MemoryPageRemoveTraceData> action, int eventID, int task, string taskName, Guid taskGuid, int opcode, string opcodeName, Guid providerGuid, string providerName, KernelTraceEventParserState state)
+            : base(eventID, task, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName)
+        {
+            Action = action;
+            this.state = state;
+        }
+        protected internal override Delegate Target
+        {
+            get { return Action; }
+            set { Action = (Action<MemoryPageRemoveTraceData>)value; }
+        }
+        protected internal override void Dispatch()
+        {
+            // We use this for the PageAccess and PageAccessEx.  
+            // TODO FIX NOW.   reenable this assert (we get 24 on a 32 bit process)
+            // Debug.Assert(!(Version == 2 && EventDataLength != HostOffset(16, 2)) || EventDataLength == HostOffset(20, 3));
+            Debug.Assert(!(Version > 2 && EventDataLength < HostOffset(16, 2)));
+            Action(this);
+        }
+        public override StringBuilder ToXml(StringBuilder sb)
+        {
+            Prefix(sb);
+            XmlAttribHex(sb, "VirtualAddress", VirtualAddress);
+            sb.Append("/>");
+            return sb;
+        }
+
+        public override string[] PayloadNames
+        {
+            get
+            {
+                if (payloadNames == null)
+                {
+                    payloadNames = new string[] { "VirtualAddress"};
+                }
+
+                return payloadNames;
+            }
+        }
+
+        public override object PayloadValue(int index)
+        {
+            switch (index)
+            {
+                case 0:
+                    return VirtualAddress;
+                default:
+                    Debug.Assert(false, "Bad field index");
+                    return null;
+            }
+        }
+
+        private event Action<MemoryPageRemoveTraceData> Action;
         protected internal override void SetState(object newState) { state = (KernelTraceEventParserState)newState; }
         private KernelTraceEventParserState state;
 

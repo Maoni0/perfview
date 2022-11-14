@@ -28,9 +28,12 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing.Printing;
 using System.IO;
 using System.IO.Compression;
+using System.IO.Ports;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -4323,10 +4326,67 @@ table {
         #endregion
     }
 
+    class PageInWS : IEquatable<PageInWS>
+    {
+        public PageKind pageKind { get; set; }
+        public Address virtualAddress { get; set; }
+
+        public PageInWS(PageKind p, Address a)
+        {
+            pageKind = p;
+            virtualAddress = a;
+        }
+
+        public override string ToString()
+        {
+            return ("Address: " + virtualAddress);
+        }
+        public override bool Equals(object obj)
+        {
+            if (obj == null) return false;
+            PageInWS otherPage = obj as PageInWS;
+            if (otherPage == null) return false;
+            else return Equals(otherPage);
+        }
+
+        public override int GetHashCode()
+        {
+            return (int)virtualAddress;
+        }
+        public bool Equals(PageInWS otherPage)
+        {
+            if (otherPage == null) return false;
+            return (this.virtualAddress == otherPage.virtualAddress);
+        }
+    }
+
+    struct VirtualAllocInfo
+    {
+        public Address start { get; set; }
+        public Address end { get; set; }
+        public double TimeStampRelativeMSec { get; set; }
+    }
+
     public partial class ETLPerfViewData : PerfViewFile
     {
         public override string FormatName { get { return "ETW"; } }
         public override string[] FileExtensions { get { return new string[] { ".btl", ".etl", ".etlx", ".etl.zip", ".vspx" }; } }
+
+        List<PageInWS> pagesInWS = new List<PageInWS>();
+        //List<VirtualAllocInfo> virtualAllocs = new List<VirtualAllocInfo>();
+
+        StreamWriter swAlbumPages = new StreamWriter("album-pages.txt", false);
+
+        // For private WS, we count the following. 
+        // WS is numTotalPagesAddeded - numTotalPagesRemoved
+        // Private WS is numPrivatePagesAdded - numCombinedPagesAdded - numPrivatePagesRemoved
+        // Total WS is numTotalPagesAdded - numTotalPagesRemoved
+        // print all the numbers each time we see an event.
+        int numTotalPagesAdded = 0;
+        int numTotalPagesRemoved = 0;
+        int numPrivatePagesAdded = 0;
+        int numCombinedPagesAdded = 0;
+        int numPrivatePagesRemoved = 0;
 
         protected internal override EventSource OpenEventSourceImpl(TextWriter log)
         {
@@ -5450,6 +5510,18 @@ table {
                         goto ADD_EVENT_FRAME;
                     }
 
+                    var asVirtualAlloc = data as VirtualAllocTraceData;
+                    if (asVirtualAlloc != null)
+                    {
+                        if (data.ProcessName.Contains("AlbumsNetCore"))
+                        {
+                            // We need to add these to facilitate WS analysis. For now I'm just writing to the file
+                            swAlbumPages.WriteLine("VA {0:0.00}: {1:X}-{2:X}({3})", 
+                            asVirtualAlloc.TimeStampRelativeMSec, asVirtualAlloc.BaseAddr,
+                            (asVirtualAlloc.BaseAddr + (ulong)asVirtualAlloc.Length), asVirtualAlloc.Flags);
+                        }
+                    }
+
                     var asPageAccess = data as MemoryPageAccessTraceData;
                     if (asPageAccess != null)
                     {
@@ -5467,10 +5539,122 @@ table {
 
                         // If it is the range of a module, log that as well, as well as it bucket.  
                         var address = asPageAccess.VirtualAddress;
+
+                        if (data.ProcessName.Contains("AlbumsNetCore"))
+                        {
+                            var alignedAddress = address & ~3UL;
+                            PageInWS pageAdded = new PageInWS(pageKind, alignedAddress);
+                            //var alignedAddress = address;
+                            PageInWS existingPage = pagesInWS.Find(x => x.virtualAddress == alignedAddress);
+                            if (existingPage == null)
+                            {
+                                numTotalPagesAdded++;
+                                if (pageKind == PageKind.ProcessPrivate)
+                                {
+                                    numPrivatePagesAdded++;
+                                }
+                                pagesInWS.Add(pageAdded);
+                                swAlbumPages.WriteLine("IN {0} [{1},{2},{3}|{4},{5}(pws {6:0.00}mb)] {7:0.000}ms {8:X}",
+                                    pageKind,
+                                    numTotalPagesAdded, numPrivatePagesAdded, numCombinedPagesAdded, numTotalPagesRemoved, numPrivatePagesRemoved,
+                                    ((double)(numPrivatePagesAdded - numCombinedPagesAdded - numPrivatePagesRemoved) * 4096.0 / 1000.0 / 1000.0),
+                                    asPageAccess.TimeStampRelativeMSec, alignedAddress);
+                            }
+                            else
+                            {
+                                if ((pageKind == PageKind.PageFileMapped) && (existingPage.pageKind == PageKind.ProcessPrivate))
+                                {
+                                    // This is a page combined page, meaning it's converted a private page to a shared page.
+                                    numCombinedPagesAdded++;
+                                }
+                                else if (pageKind == PageKind.ProcessPrivate)
+                                {
+                                    // A shared page got convereted to a private page.
+                                    numPrivatePagesAdded++;
+                                }
+                                swAlbumPages.WriteLine("IN {0}<-{1} [{2},{3},{4}|{5},{6}(pws {7:0.00}mb)] {8:0.000}ms {9:X}",
+                                    pageKind, existingPage.pageKind,
+                                    numTotalPagesAdded, numPrivatePagesAdded, numCombinedPagesAdded, numTotalPagesRemoved, numPrivatePagesRemoved,
+                                    ((double)(numPrivatePagesAdded - numCombinedPagesAdded - numPrivatePagesRemoved) * 4096.0 / 1000.0 / 1000.0),
+                                    asPageAccess.TimeStampRelativeMSec, alignedAddress);
+                                existingPage.pageKind = pageKind;
+                            }
+
+                            swAlbumPages.Flush();
+                        }
+
                         var process = data.Process();
                         if (process != null)
                         {
                             var module = process.LoadedModules.GetModuleContainingAddress(address, asPageAccess.TimeStampRelativeMSec);
+                            if ((module != null) && (pageKind == PageKind.ProcessPrivate))
+                            {
+                                //if (module.ModuleFile != null && module.ModuleFile.ImageSize != 0)
+                                //{
+                                //    // Create a node that indicates where in the file (in buckets) the access was from 
+                                //    double normalizeDistance = (address - module.ImageBase) / ((double)module.ModuleFile.ImageSize);
+                                //    if (0 <= normalizeDistance && normalizeDistance < 1)
+                                //    {
+                                //        const int numBuckets = 20;
+                                //        int bucket = (int)(normalizeDistance * numBuckets);
+                                //        int bucketSizeInPages = module.ModuleFile.ImageSize / (numBuckets * 4096);
+                                //        string bucketName = "Image Bucket " + bucket + " Size " + bucketSizeInPages + " Pages";
+                                //        stackIndex = stackSource.Interner.CallStackIntern(stackSource.Interner.FrameIntern(bucketName), stackIndex);
+                                //    }
+                                //}
+                                stackIndex = stackSource.Interner.CallStackIntern(stackSource.Interner.FrameIntern("EventData Image  (" + pageKind.ToString() + ") " + module.ModuleFile.FilePath), stackIndex);
+                            }
+                        }
+                        goto ADD_EVENT_FRAME;
+                    }
+
+                    var asPageRemove = data as MemoryPageRemoveTraceData;
+                    if (asPageRemove != null)
+                    {
+                        sample.Metric = 4;      // Convenience since these are 4K pages 
+
+                        //// EMit the kind, which may have a file name argument.  
+                        //var pageKind = asPageAccess.PageKind;
+                        //string fileName = asPageAccess.FileName;
+                        //if (fileName == null)
+                        //{
+                        //    fileName = "";
+                        //}
+
+                        // If it is the range of a module, log that as well, as well as it bucket.  
+                        var address = asPageRemove.VirtualAddress;
+
+                        if (data.ProcessName.Contains("AlbumsNetCore"))
+                        {
+                            PageInWS existingPage = pagesInWS.Find(x => x.virtualAddress == address);
+
+                            if (existingPage == null)
+                            {
+                                swAlbumPages.WriteLine("OUT {0:X} not found?!", address);
+                            }
+                            else
+                            {
+                                numTotalPagesRemoved++;
+                                if (existingPage.pageKind == PageKind.ProcessPrivate)
+                                {
+                                    numPrivatePagesRemoved++;
+                                }
+                                pagesInWS.Remove(existingPage);
+                                swAlbumPages.WriteLine("OUT {0} [{1},{2},{3}|{4},{5}(pws {6:0.00}mb)] {7:0.000}ms {8:X}",
+                                    existingPage.pageKind,
+                                    numTotalPagesAdded, numPrivatePagesAdded, numCombinedPagesAdded, numTotalPagesRemoved, numPrivatePagesRemoved,
+                                    ((double)(numPrivatePagesAdded - numCombinedPagesAdded - numPrivatePagesRemoved) * 4096.0 / 1000.0 / 1000.0),
+                                    asPageRemove.TimeStampRelativeMSec,address);
+                                stackIndex = stackSource.Interner.CallStackIntern(stackSource.Interner.FrameIntern(existingPage.pageKind.ToString()), stackIndex);
+                            }
+
+                            swAlbumPages.Flush();
+                        }
+
+                        var process = data.Process();
+                        if (process != null)
+                        {
+                            var module = process.LoadedModules.GetModuleContainingAddress(address, asPageRemove.TimeStampRelativeMSec);
                             if (module != null)
                             {
                                 if (module.ModuleFile != null && module.ModuleFile.ImageSize != 0)
@@ -5491,6 +5675,7 @@ table {
                         }
                         goto ADD_EVENT_FRAME;
                     }
+
 
                     var asPMCCounter = data as PMCCounterProfTraceData;
                     if (asPMCCounter != null)
