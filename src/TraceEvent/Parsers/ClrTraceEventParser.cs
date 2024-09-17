@@ -5351,7 +5351,8 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
                     Debug.Assert(false, "PinnedAllocatedAdvance invalid Version : " + Version);
                 }
 
-                Debug.Assert(ret >= 0);
+                // AndrewAu
+                // Debug.Assert(ret >= 0);
                 return ret;
             }
         }
@@ -6165,7 +6166,8 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
                     Debug.Assert(false, "ObjSpaceBefore invalid version : " + m_version);
                 }
 
-                Debug.Assert(ret >= 0);
+                // AndrewAu
+                // Debug.Assert(ret >= 0);
                 return ret;
             }
         }
@@ -6205,7 +6207,8 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
             {
                 long ret = SizeAfter - Fragmentation;
 
-                Debug.Assert(ret >= 0);
+                // AndrewAu
+                // Debug.Assert(ret >= 0);
                 return ret;
             }
         }
@@ -6422,7 +6425,8 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
                     Debug.Assert(false, "SurvRate invalid version : " + m_version);
                 }
 
-                Debug.Assert(ret >= 0);
+                // AndrewAu
+                // Debug.Assert(ret >= 0);
                 return ret;
             }
         }

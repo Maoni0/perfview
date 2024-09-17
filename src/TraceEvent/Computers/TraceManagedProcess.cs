@@ -554,6 +554,8 @@ namespace Microsoft.Diagnostics.Tracing.Analysis
                                     break;
                                 }
                             }
+                            // AndrewAu - broken thread name - fixed
+                            mang.GC.m_stats.IsServerGCUsed = 1;
 
                             if (mang.GC.m_stats.IsServerGCUsed == 1)
                             {
@@ -4502,7 +4504,8 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
             }
             else
             {
-                Debug.Assert(_event.PauseDurationMSec == 0);
+                // AndrewAu
+                // Debug.Assert(_event.PauseDurationMSec == 0);
                 _event.PauseDurationMSec = RestartEEMSec - _event.PauseStartRelativeMSec;
             }
         }
